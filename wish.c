@@ -33,9 +33,13 @@ int (*builtin_func[])(char **) = { &wish_exit, &wish_cd, &wish_path };
  */
 int wish_cd(char **args){
   if (args[1] == NULL) {
-    wish_error();
+    wish_error(1);
+  } else if (args[2] != NULL) {
+    wish_error(2);
   } else {
-    if (chdir(args[1]) != 0) wish_error();
+    if (chdir(args[1]) != 0) {
+        wish_error(3);
+    }
   }
   return 1;
 }
@@ -59,12 +63,57 @@ int wish_exit(){
   return 0;
 }
 
+char* itoa(int num,char* str,int radix)
+{
+    char index[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";//索引表
+    unsigned unum;//存放要转换的整数的绝对值,转换的整数可能是负数
+    int i=0,j,k;//i用来指示设置字符串相应位，转换之后i其实就是字符串的长度；转换后顺序是逆序的，有正负的情况，k用来指示调整顺序的开始位置;j用来指示调整顺序时的交换。
+ 
+    //获取要转换的整数的绝对值
+    if(radix==10&&num<0)//要转换成十进制数并且是负数
+    {
+        unum=(unsigned)-num;//将num的绝对值赋给unum
+        str[i++]='-';//在字符串最前面设置为'-'号，并且索引加1
+    }
+    else unum=(unsigned)num;//若是num为正，直接赋值给unum
+ 
+    //转换部分，注意转换后是逆序的
+    do
+    {
+        str[i++]=index[unum%(unsigned)radix];//取unum的最后一位，并设置为str对应位，指示索引加1
+        unum/=radix;//unum去掉最后一位
+ 
+    }while(unum);//直至unum为0退出循环
+ 
+    str[i]='\0';//在字符串最后添加'\0'字符，c语言字符串以'\0'结束。
+ 
+    //将顺序调整过来
+    if(str[0]=='-') k=1;//如果是负数，符号不用调整，从符号后面开始调整
+    else k=0;//不是负数，全部都要调整
+ 
+    char temp;//临时变量，交换两个值时用到
+    for(j=k;j<=(i-1)/2;j++)//头尾一一对称交换，i其实就是字符串的长度，索引最大值比长度少1
+    {
+        temp=str[j];//头部赋值给临时变量
+        str[j]=str[i-1+k-j];//尾部赋值给头部
+        str[i-1+k-j]=temp;//将临时变量的值(其实就是之前的头部值)赋给尾部
+    }
+ 
+    return str;//返回转换后的字符串
+ 
+}
+
+
 /*
  * Print error message whenever encounter any type of error
  */
-void wish_error(){
+void wish_error(int i){
   char error_message[30] = "An error has occurred\n";
   write(STDERR_FILENO, error_message, strlen(error_message));
+
+  char str[3];
+  itoa(i, str, 10);
+  write(STDERR_FILENO, str, strlen(str));
 }
 
 /*
@@ -118,13 +167,12 @@ int wish_launch(char **args){
 	    close(file_out);
       }   
     }
+    execvp(args[0], args);
+    exit(EXIT_FAILURE);
 
-    if (execvp(args[0], args) == -1)
-      wish_error();
-      
   } else if (pid < 0){
   // Fork error
-    wish_error();
+    wish_error(5);
   } else {
   // Parent process
     do {
@@ -144,16 +192,15 @@ char *wish_read_line(){
   ssize_t size = 0;
 
   if(!line) { // Allocation failed
-    wish_error;
+    wish_error(6);
     exit(EXIT_FAILURE);
   }
 
   if (getline(&line, &size, stdin) == -1) {
     if(feof(stdin)) {
-        free(line);
+      free(line);
       exit(EXIT_SUCCESS); //we receiced an EOF
     } else {
-      wish_error();
       exit(EXIT_FAILURE);
     }
   }
@@ -170,7 +217,9 @@ char **wish_split_line(char *line){
   char *token;
   int p = 0; //position
 
-  if(!tokens) wish_error();
+  if(!tokens) {
+    wish_error(7);
+  }
   token = strtok(line, WISH_DELIM);
   while (token != NULL){
     tokens[p] = token;
@@ -199,28 +248,30 @@ int wish_interact(){
 }
 
 int wish_batch(char file[100]) {
-	FILE *fptr;
-	char line[200];
-	char **args;
+  FILE *fptr;
+  char *line;
+  char **args;
 
-	fptr = fopen(file, "r");
+  fptr = fopen(file, "r");
 
-	if (fptr == NULL)
-	{
-		wish_error();
-		exit(1);
-	}
-	else
-	{
-		while(fgets(line, sizeof(line), fptr)!= NULL)
-		{
-			args = wish_split_line(line);
-			wish_execute(args);
-		}
-	}
-	free(args);
-	fclose(fptr);
-	return 1;
+  if (fptr == NULL)
+  {
+  	wish_error(8);
+  	exit(1);
+  }
+  else {
+    while(fgets(line, sizeof(line), fptr) != NULL) 
+    {
+      args = wish_split_line(line);
+  	  wish_execute(args);
+    } 
+
+  }
+  
+  free(args);
+
+  fclose(fptr);
+  return 1;
 }
 
 int main(int argc, char *argv[]){
@@ -231,15 +282,13 @@ int main(int argc, char *argv[]){
   int status;
   int size = 1024;
 
-  while(1){
-    if (argc == 1){
-      wish_interact();
-    } else if (argc == 2){
-      wish_batch(argv[1]);
-    } else {
-      wish_error();
-      exit(1);
-    }
+  if (argc == 1){
+    wish_interact();
+  } else if (argc == 2){
+    wish_batch(argv[1]);
+  } else {
+    wish_error(9); 
   }
+
   return 0;
 }
