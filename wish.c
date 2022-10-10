@@ -1,7 +1,7 @@
-#include <string.h>
 #include <sys/wait.h>
 #include <sys/types.h>
 
+#include <string.h>
 #include <unistd.h>
 #include <ctype.h>
 #include <fcntl.h>
@@ -15,7 +15,10 @@ int wish_cd();
 int wish_path();
 
 void wish_error();
-int wish_execute();
+int wish_execute(char **args);
+int wish_launch(char **args);
+char *wish_read_line();
+char **wish_split_line(char *line);
 
 char* path[100];
 //List of built-in commands' names and functions.
@@ -38,15 +41,6 @@ int wish_cd(char **args){
 }
 
 /*
- * Print error message whenever encounter any type of error
- */
-void wish_error(){
-  char error_message[30] = "An error has occurred\n";
-  write(STDERR_FILENO, error_message, strlen(error_message));
-}
-
-
-/*
  * add arguments to the search path of the shell
  * overwrite the old path with the newly specified path.
  */
@@ -65,7 +59,14 @@ int wish_exit(){
   return 0;
 }
 
-int wish_launch(char **args);
+/*
+ * Print error message whenever encounter any type of error
+ */
+void wish_error(){
+  char error_message[30] = "An error has occurred\n";
+  write(STDERR_FILENO, error_message, strlen(error_message));
+}
+
 /*
  * Execute shell built-in or launch program.
  * return 1 if the shell should continue running;
@@ -74,34 +75,62 @@ int wish_launch(char **args);
 int wish_execute(char **args){
   if(args[0] == NULL) return 1;
 
+  // Build in command
   int i;
   for (i = 0; i < num_builtins; i++){
     if (strcmp(args[0], builtin_str[i]) == 0) return (*builtin_func[i])(args);
   }
 
+  // Not built-in, run wish_launch to find the program.
   return wish_launch(args);
 }
 
 
 /*
  * Launch a program and wait for termination.
- *
+ * @param args is Null-terminated list of arguments.
+ * @retrun Always return 1 to continue execution.
  */
 int wish_launch(char **args){
   pid_t pid;
   int status;
+  char* redirec_sign =NULL;
+  char* redirec_path =NULL;
 
+  // Check redirection
+  int i = 0;
+  while ( *(args+i) != NULL){ // Check all tokens
+    if(strcmp( *(args+i),">")) { 
+      redirec_sign = *(args+i);
+      redirec_path = *(args+i+1); // Record the path;
+      break;		   
+    }
+  }
+  
   pid = fork();
   if (pid == 0) {
+  // Child process
+    // If need Redirection
+    if ( redirec_sign != NULL){
+      int file_out = open(redirec_path,O_CREAT|O_WRONLY|O_TRUNC, 0644);
+      if(file_out>0 ){
+        dup2(file_out, STDOUT_FILENO);
+	close(file_out);
+      }   
+    }
+
     if (execvp(args[0], args))
       wish_error();
   } else if (pid < 0){
+  // Fork error
     wish_error();
   } else {
+  // Parent process
     do {
       waitpid(pid, &status, WUNTRACED);
     } while( !WIFEXITED(status) && !WIFSIGNALED(status));
   }
+
   return 1;
 }
 
@@ -112,7 +141,6 @@ int wish_launch(char **args){
 char *wish_read_line(){
   char *line = malloc( 1024*sizeof(char));
   ssize_t size = 0;
-  char *redirec = NULL;
 
   if (getline(&line, &size, stdin) == -1) {
     if(feof(stdin)) {
@@ -122,6 +150,8 @@ char *wish_read_line(){
       exit(EXIT_FAILURE);
     }
   }
+
+  
 
   return line;
 
@@ -153,10 +183,11 @@ char **wish_split_line(char *line){
 
 int main(int argc, char *argv[]){
 
-
-  char *line;
+  FILE *file;
+  char *line = malloc(1024 *sizeof(char));
   char **args;
   int status;
+  int size = 1024;
 
   while(1){
     if (argc == 1){
@@ -168,6 +199,32 @@ int main(int argc, char *argv[]){
 
       free(line);
       free(args);
+    } else if (argc == 2){
+    //batch mode
+     
+      file = fopen(argv[1],"r");
+      if(file == NULL) {
+        wish_error;
+       exit(1);
+      }
+
+      while (1) {
+        fgets(line, size, file);
+
+        // Stop if we meet the EOF
+        if (line == NULL) break; 
+        
+        args = wish_split_line(line);
+        wish_execute(args);
+
+        free(line);
+        free(args);
+      }
+         
+    } else {
+      wish_error();
+      exit(1);
     }
   }
+  return 0;
 }

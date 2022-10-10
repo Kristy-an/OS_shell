@@ -1,0 +1,2 @@
+free(): double free detected in tcache 2
+/u/c/s/cs537-1/tests/tester/run-tests.sh: line 27: 2846292 Aborted                 (core dumped) ./wish $TESTS_FOLDER/4.in
