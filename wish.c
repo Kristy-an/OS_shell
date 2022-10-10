@@ -115,12 +115,13 @@ int wish_launch(char **args){
       int file_out = open(redirec_path,O_CREAT|O_WRONLY|O_TRUNC, 0644);
       if(file_out>0 ){
         dup2(file_out, STDOUT_FILENO);
-	close(file_out);
+	    close(file_out);
       }   
     }
 
-    if (execvp(args[0], args))
+    if (execvp(args[0], args) == -1)
       wish_error();
+      
   } else if (pid < 0){
   // Fork error
     wish_error();
@@ -142,19 +143,21 @@ char *wish_read_line(){
   char *line = malloc( 1024*sizeof(char));
   ssize_t size = 0;
 
+  if(!line) { // Allocation failed
+    wish_error;
+    exit(EXIT_FAILURE);
+  }
+
   if (getline(&line, &size, stdin) == -1) {
     if(feof(stdin)) {
+        free(line);
       exit(EXIT_SUCCESS); //we receiced an EOF
     } else {
       wish_error();
       exit(EXIT_FAILURE);
     }
   }
-
-  
-
-  return line;
-
+return line;
 }
 
 /*
@@ -180,6 +183,45 @@ char **wish_split_line(char *line){
 }
 
 
+int wish_interact(){
+  char *line;
+  char **args;
+  while (1) {
+      printf("wish> ");
+      line = wish_read_line();
+      args = wish_split_line(line);
+      wish_execute(args);
+
+      free(line);
+      free(args);
+  }
+  return 1;
+}
+
+int wish_batch(char file[100]) {
+	FILE *fptr;
+	char line[200];
+	char **args;
+
+	fptr = fopen(file, "r");
+
+	if (fptr == NULL)
+	{
+		wish_error();
+		exit(1);
+	}
+	else
+	{
+		while(fgets(line, sizeof(line), fptr)!= NULL)
+		{
+			args = wish_split_line(line);
+			wish_execute(args);
+		}
+	}
+	free(args);
+	fclose(fptr);
+	return 1;
+}
 
 int main(int argc, char *argv[]){
 
@@ -191,36 +233,9 @@ int main(int argc, char *argv[]){
 
   while(1){
     if (argc == 1){
-    // built-in command mode
-      printf("wish> ");
-      line = wish_read_line();
-      args = wish_split_line(line);
-      wish_execute(args);
-
-      free(line);
-      free(args);
+      wish_interact();
     } else if (argc == 2){
-    //batch mode
-     
-      file = fopen(argv[1],"r");
-      if(file == NULL) {
-        wish_error;
-       exit(1);
-      }
-
-      while (1) {
-        fgets(line, size, file);
-
-        // Stop if we meet the EOF
-        if (line == NULL) break; 
-        
-        args = wish_split_line(line);
-        wish_execute(args);
-
-        free(line);
-        free(args);
-      }
-         
+      wish_batch(argv[1]);
     } else {
       wish_error();
       exit(1);
